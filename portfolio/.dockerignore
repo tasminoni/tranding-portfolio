@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.openai
+qa
+test-results
+.env
+.env.*
+*.log

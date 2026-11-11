@@ -1,0 +1,94 @@
+import {chromium,expect} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {createPortfolioServer} from '../server/index.mjs';
+const server=await createPortfolioServer({port:0});
+const base='http://127.0.0.1:'+server.port;
+let browser;
+try{
+ browser=await chromium.launch({channel:'chrome',headless:true});
+ const context=await browser.newContext();
+ const page=await context.newPage();const errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await mkdir(new URL('../qa',import.meta.url),{recursive:true});
+ await page.goto(base,{waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'Skip build intro'}).click();
+ await expect(page.locator('.presence-trigger')).toContainText('1 online');
+ await page.evaluate(()=>Promise.race([document.fonts.ready,new Promise(r=>setTimeout(r,5000))]));
+ for(const width of [1440,768,390,320]){
+  await page.setViewportSize({width,height:1000});
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await expect(page.locator('h1')).toHaveCount(1);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow at '+width);
+  await page.screenshot({path:fileURLToPath(new URL('../qa/'+width+'.png',import.meta.url)),fullPage:true});
+ }
+ await page.getByRole('button',{name:'Cross-platform apps',exact:true}).click();
+ await expect(page.locator('.project-card')).toHaveCount(1);
+ await page.getByLabel('Search projects').fill('no-such-project');
+ await page.getByRole('heading',{name:'No matching projects'}).waitFor();
+ await page.getByRole('button',{name:'Reset filters'}).click();
+ const trigger=page.getByRole('button',{name:'View Clothigo project details'});
+ await trigger.click();assert.ok(await page.locator('dialog').evaluate(e=>e.open));
+ await page.keyboard.press('Escape');
+ assert.equal(await page.locator('dialog').evaluate(e=>e.open),false);
+ assert.ok(await trigger.evaluate(e=>e===document.activeElement),'Dialog restores focus');
+ await page.getByRole('button',{name:/Motion/}).click();await page.reload({waitUntil:'domcontentloaded'});
+ await expect(page.locator('html')).toHaveAttribute('data-motion','off');
+ await page.getByRole('button',{name:'Open menu'}).click();await page.keyboard.press('Escape');
+ await expect(page.getByRole('button',{name:'Open menu'})).toHaveAttribute('aria-expanded','false');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(page.locator('html')).toHaveAttribute('data-motion','off');
+ assert.equal((await page.request.get(base+'/assets/tasmin-ahmed-resume.pdf')).status(),200);
+ const form=page.locator('.contact-form');
+ assert.equal(await form.evaluate(f=>f.checkValidity()),false);
+ await page.getByLabel('Your name',{exact:true}).fill('Visitor');
+ await page.getByLabel('Email address').fill('visitor@example.com');
+ await page.getByLabel('What are you working on?').fill('A project idea');
+ assert.equal(await form.evaluate(f=>f.checkValidity()),true);
+ // Two independent browser sessions: no localStorage or BroadcastChannel shortcuts.
+ await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>window.scrollTo(0,0));
+ const otherContext=await browser.newContext({viewport:{width:1440,height:1000}});
+ const other=await otherContext.newPage();other.on('pageerror',e=>errors.push(e.message));
+ await other.goto(base,{waitUntil:'domcontentloaded'});
+ await other.getByRole('button',{name:'Skip build intro'}).click();
+ await expect(page.locator('.presence-trigger')).toContainText('2 online');
+ await expect(other.locator('.presence-trigger')).toContainText('2 online');
+ await page.bringToFront();await page.mouse.move(340,310);
+ await expect(other.locator('.remote-cursor')).toHaveCount(1);
+ await expect(other.locator('.remote-cursor')).toHaveCSS('opacity','1');
+ const before=await other.locator('.remote-cursor').evaluate(e=>e.getBoundingClientRect().x);
+ await page.mouse.move(500,350);
+ await expect.poll(async()=>other.locator('.remote-cursor').evaluate(e=>e.getBoundingClientRect().x)).toBeGreaterThan(before+100);
+ await page.locator('.presence-trigger').click();
+ await page.getByLabel('Your display name').fill('Tasmin');
+ await page.getByRole('button',{name:'Save',exact:true}).click();
+ await expect(other.locator('.remote-cursor')).toContainText('Tasmin');
+ await page.getByRole('button',{name:'Close live room'}).click();
+ await page.mouse.move(400,360);
+ await expect(other.locator('.remote-cursor')).toHaveCSS('opacity','1');
+ await other.screenshot({path:fileURLToPath(new URL('../qa/multiplayer.png',import.meta.url))});
+ // Cursor coordinates remain attached to the same section when receiver scrolls.
+ await other.evaluate(()=>window.scrollTo(0,200));
+ await expect.poll(async()=>other.locator('.remote-cursor').evaluate(e=>Math.round(e.getBoundingClientRect().y))).toBe(160);
+ await other.evaluate(()=>window.scrollTo(0,0));
+ // Contact fields never transmit pointer activity.
+ await page.locator('.contact-form').scrollIntoViewIfNeeded();
+ await page.getByLabel('Email address').hover();
+ await expect(other.locator('.remote-cursor')).toHaveCSS('opacity','0');
+ await page.locator('.presence-trigger').click();
+ await page.getByRole('button',{name:'Leave live room'}).click();
+ await expect(other.locator('.presence-trigger')).toContainText('1 online');
+ await expect(other.locator('.remote-cursor')).toHaveCount(0);
+ await page.getByRole('button',{name:'Join live room'}).click();
+ await expect(other.locator('.presence-trigger')).toContainText('2 online');
+ await otherContext.close();
+ await expect(page.locator('.presence-trigger')).toContainText('1 online');
+ await expect(page.locator('.remote-cursor')).toHaveCount(0);
+ // Server failure must clear stale users and show honest offline state.
+ await server.close();
+ await expect(page.locator('.presence-trigger')).toContainText('offline');
+ await expect(page.locator('.remote-cursor')).toHaveCount(0);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: desktop/tablet/mobile, filters, modal focus, navigation, motion, form, resume; two independent browsers synchronize real cursors/names/counts, scroll mapping, field privacy, leave/rejoin/disconnect, and server-offline handling.');
+}finally{await browser?.close();if(server.http.listening)await server.close()}

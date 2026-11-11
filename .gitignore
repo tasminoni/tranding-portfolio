@@ -1,0 +1,21 @@
+# Dependencies & Caches
+node_modules/
+.npm-cache/
+.tools/
+.openai/
+
+# Build & QA outputs
+dist/
+qa/
+test-results/
+playwright-report/
+
+# Logs & Archives
+*.log
+*.tar.gz
+image.png
+
+# Environment files
+.env
+.env.local
+.env.*.local
