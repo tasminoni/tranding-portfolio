@@ -116,6 +116,10 @@ The workflow is .github/workflows/deploy.yml. It must be placed at the root of t
 
 The workflow uses the actual Pages base path and URL, so user sites, repository sites, and configured custom domains do not need a hardcoded repository name. It installs dependencies with npm ci, type-checks/builds, runs the server checks, and uploads only dist.
 
+If `actions/configure-pages` reports `Get Pages site failed` or `HttpError: Not Found`, open https://github.com/tasminoni/tranding-portfolio/settings/pages and select **GitHub Actions** under **Build and deployment > Source**, then rerun the failed workflow. Adding `enablement: true` alone does not fix this: automatic enablement requires a separate privileged token instead of GITHUB_TOKEN. If Pages settings are unavailable, check your repository permissions and GitHub plan support for the repository's visibility.
+
+The workflow pins `ubuntu-24.04` to avoid automatic runner OS migrations. The `ubuntu-latest` migration notice is informational and does not cause the Pages API failure.
+
 Root and repository-subfolder deployments are checked with:
 
     npm run typecheck

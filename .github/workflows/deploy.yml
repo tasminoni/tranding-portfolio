@@ -17,7 +17,7 @@ jobs:
   deploy:
     # Publish only the repository's default branch.
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -47,6 +47,8 @@ jobs:
 
       - name: Read GitHub Pages settings
         id: pages
+        # Enable Settings > Pages > Source: GitHub Actions before the first run.
+        # Automatic enablement requires a separate token; GITHUB_TOKEN cannot enable Pages.
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Install dependencies
@@ -73,3 +75,4 @@ jobs:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
